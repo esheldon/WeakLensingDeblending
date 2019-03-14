@@ -47,38 +47,54 @@ class Survey(object):
     def __init__(self,**args):
         if set(args.keys()) != set(Survey._parameter_names):
             raise RuntimeError('Missing or extra arguments provided to Survey constructor.')
+
+        psf_model = args.pop('psf_model',None)
+
         self.args = args
+
         self.__dict__.update(args)
-        # Build our atmospheric PSF model.
-        atmospheric_psf_fwhm = self.zenith_psf_fwhm*self.airmass**0.6
-        if self.atmospheric_psf_beta > 0:
-            atmospheric_psf_model = galsim.Moffat(
-                beta = self.atmospheric_psf_beta, fwhm = atmospheric_psf_fwhm)
+
+        if psf_model is not None:
+            #print('psf model:',psf_model)
+            self.psf_model=psf_model
+            self.psf_image = psf_model.drawImage(
+                scale=self.pixel_scale,
+            )
+            psf_size_pixels=self.psf_image.array.shape[0]
         else:
-            atmospheric_psf_model = galsim.Kolmogorov(fwhm = atmospheric_psf_fwhm)
-        # Shear the atmospheric PSF, if necessary. Note that GalSim uses g1,g2 for the
-        # |g| = (a-b)/(a+b) ellipticity spinor and e1,e2 for |e| = (a^2-b^2)/(a^2+b^2).
-        if self.atmospheric_psf_e1 != 0 or self.atmospheric_psf_e2 != 0:
-            atmospheric_psf_model = atmospheric_psf_model.shear(
-                g1 = self.atmospheric_psf_e1, g2 = self.atmospheric_psf_e2)
-        # Combine with our optical PSF model, if any.
-        if self.mirror_diameter > 0:
-            lambda_over_diameter = 3600*math.degrees(
-                1e-10*Survey._central_wavelength[self.filter_band]/self.mirror_diameter)
-            area_ratio = self.effective_area/(math.pi*(0.5*self.mirror_diameter)**2)
-            if area_ratio <= 0 or area_ratio > 1:
-                raise RuntimeError('Incompatible effective-area and mirror-diameter values.')
-            self.obscuration_fraction = math.sqrt(1 - area_ratio)
-            optical_psf_model = galsim.Airy(lam_over_diam = lambda_over_diameter,
-                obscuration = self.obscuration_fraction)
-            self.psf_model = galsim.Convolve(atmospheric_psf_model,optical_psf_model)
-        else:
-            self.psf_model = atmospheric_psf_model
-            self.obscuration_fraction = 0.
-        # Draw a centered PSF image covering 10x the atmospheric PSF FWHM.
-        psf_size_pixels = 2*int(math.ceil(10*atmospheric_psf_fwhm/self.pixel_scale))
-        self.psf_image = galsim.Image(psf_size_pixels,psf_size_pixels,scale  = self.pixel_scale)
-        self.psf_model.drawImage(image = self.psf_image)
+            # Build our atmospheric PSF model.
+            atmospheric_psf_fwhm = self.zenith_psf_fwhm*self.airmass**0.6
+            if self.atmospheric_psf_beta > 0:
+                atmospheric_psf_model = galsim.Moffat(
+                    beta = self.atmospheric_psf_beta, fwhm = atmospheric_psf_fwhm)
+            else:
+                atmospheric_psf_model = galsim.Kolmogorov(fwhm = atmospheric_psf_fwhm)
+            # Shear the atmospheric PSF, if necessary. Note that GalSim uses g1,g2 for the
+            # |g| = (a-b)/(a+b) ellipticity spinor and e1,e2 for |e| = (a^2-b^2)/(a^2+b^2).
+            if self.atmospheric_psf_e1 != 0 or self.atmospheric_psf_e2 != 0:
+                atmospheric_psf_model = atmospheric_psf_model.shear(
+                    g1 = self.atmospheric_psf_e1, g2 = self.atmospheric_psf_e2)
+            # Combine with our optical PSF model, if any.
+            if self.mirror_diameter > 0:
+                lambda_over_diameter = 3600*math.degrees(
+                    1e-10*Survey._central_wavelength[self.filter_band]/self.mirror_diameter)
+                area_ratio = self.effective_area/(math.pi*(0.5*self.mirror_diameter)**2)
+                if area_ratio <= 0 or area_ratio > 1:
+                    raise RuntimeError('Incompatible effective-area and mirror-diameter values.')
+                self.obscuration_fraction = math.sqrt(1 - area_ratio)
+                optical_psf_model = galsim.Airy(lam_over_diam = lambda_over_diameter,
+                    obscuration = self.obscuration_fraction)
+                self.psf_model = galsim.Convolve(atmospheric_psf_model,optical_psf_model)
+            else:
+                self.psf_model = atmospheric_psf_model
+                self.obscuration_fraction = 0.
+            # Draw a centered PSF image covering 10x the atmospheric PSF FWHM.
+            psf_size_pixels = 2*int(math.ceil(10*atmospheric_psf_fwhm/self.pixel_scale))
+
+            self.psf_image = galsim.Image(psf_size_pixels,psf_size_pixels,scale  = self.pixel_scale)
+
+            self.psf_model.drawImage(image = self.psf_image)
+
         # Draw a (temporary) high-resolution (10x) image covering the same area.
         zoom = 10
         hires_psf_image = galsim.Image(zoom*psf_size_pixels,zoom*psf_size_pixels,scale = self.pixel_scale/zoom)
@@ -156,6 +172,7 @@ class Survey(object):
 
     # Survey constructor parameter names. The order established here is used by print_defaults().
     _parameter_names = (
+        'psf_model',
         'survey_name','filter_band',
         'image_width','image_height','pixel_scale','exposure_time','zero_point',
         'mirror_diameter','effective_area',
